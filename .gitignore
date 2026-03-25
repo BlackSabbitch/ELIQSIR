@@ -4,7 +4,9 @@ __pycache__/
 *$py.class
 
 # Data files
-data/ChEMBL/*
+# Ignore all files in data/ChEMBL/ directory extecpt .gitkeep
+!data/ChEMBL/.gitkeep
+data/ChEMBL/* 
 *.csv
 *.tsv
 */*.csv
