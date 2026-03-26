@@ -89,7 +89,7 @@ cp .env.example .env
 ### 3 – Download ChEMBL
 
 Download the MySQL dump from the [ChEMBLdb FTP server](https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/)
-([MySQL dump ~19 GB unpacked](https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_36_mysql.tar.gz),
+([SQLite dump ~ 27GB unpacked](https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/chembl_36_sqlite.tar.gz),
 [schema docs](https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/schema_documentation.html))
 and **extract it into the project folder**:
 
@@ -97,38 +97,16 @@ and **extract it into the project folder**:
 ELIQSIR/
 └── data/
     └── ChEMBL/
-        └── chembl_36/                   # Extracted folder from the downloaded tar.gz file
-            └── chembl_36_mysql/
-                ├── chembl_36_mysql.dmp   ← place it here
-                └── INSTALL_mysql
+        └── chembl_xx/                   # Extracted folder from the downloaded tar.gz file
+            └── chembl_xx_sqlite/
+                ├── chembl_xx.db
+                └── INSTALL_sqlite
 ```
 
-The pipeline will automatically create the `chembl_36` database and load the
-dump on first run — no manual `mysql` commands needed.  Subsequent runs detect
+The pipeline will automatically create the `chembl_xx` database and load the
+dump on first run — no manual `sqlite` commands needed.  Subsequent runs detect
 that the database is already populated and skip the import entirely.
 
-> **Manual import (optional):** If you prefer to load the dump yourself, follow
-> the two-step process in `data/ChEMBLE/chembl_36/chembl_36_mysql/INSTALL_mysql`:
->
-> ```sql
-> -- Step 1 (MySQL shell):
-> CREATE DATABASE chembl_36 DEFAULT CHARACTER SET utf8 DEFAULT COLLATE utf8_general_ci;
-> ```
-> ```bash
-> # Step 2 (shell):
-> mysql -uUSERNAME -pPASSWORD [-hHOST -PPORT] chembl_36 < chembl_36_mysql.dmp
-> ```
-
-**If dumping is delayed try:** adding the following inside a new file like `sudo nano /etc/my.cnf.d/chembl-optimizations.cnf`
-```bash
-[mysqld]
-innodb_buffer_pool_size = 2G
-innodb_log_buffer_size = 64M
-innodb_flush_log_at_trx_commit = 2
-innodb_doublewrite = 0
-bulk_insert_buffer_size = 512M
-max_allowed_packet = 1G
-```
 
 ### 4 – Create the MySQL database
 
