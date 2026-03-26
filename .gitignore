@@ -4,14 +4,21 @@ __pycache__/
 *$py.class
 
 # Data files
-# Ignore all files in data/ChEMBL/ directory extecpt .gitkeep
+# Ignore all files in data/ChEMBL/ directory except .gitkeep
+data/ChEMBL/*
 !data/ChEMBL/.gitkeep
-data/ChEMBL/* 
+!data/ChEMBL/cache/
+data/ChEMBL/cache/*
+!data/ChEMBL/cache/.gitkeep
+
+# Ignore large data files
 *.csv
 *.tsv
 */*.csv
 */*/*.csv
 */*/*.tsv
+*.parquet
+!data/ChEMBL/cache/*.parquet
 
 # C extensions
 *.so

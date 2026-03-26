@@ -56,7 +56,12 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from src.config import settings
+
 logger = logging.getLogger(__name__)
+
+# Shorthand for safe display of paths (project-relative, never absolute)
+_dp = settings.display_path
 
 # ---------------------------------------------------------------------------
 # Supported serialisation formats
@@ -223,13 +228,13 @@ class CheckpointManager:
             "rows": len(df),
             "columns": list(df.columns),
             "saved_at": datetime.now(tz=timezone.utc).isoformat(),
-            "path": str(data_path.resolve()),
+            "path": _dp(data_path),
         }
         self._manifest[name] = entry
         self._flush_manifest()
 
         logger.info(
-            "[checkpoint] ✔ '%s' saved – %d rows → '%s'.", name, len(df), data_path
+            "[checkpoint] ✔ '%s' saved – %d rows → '%s'.", name, len(df), _dp(data_path)
         )
         return data_path
 
@@ -254,7 +259,7 @@ class CheckpointManager:
         if not data_path.exists():
             raise FileNotFoundError(
                 f"Checkpoint '{name}' is in the manifest but its data file "
-                f"'{data_path}' is missing.  Run invalidate('{name}') and "
+                f"'{_dp(data_path)}' is missing.  Run invalidate('{name}') and "
                 "re-execute the pipeline."
             )
 
@@ -265,7 +270,7 @@ class CheckpointManager:
         df = loader(data_path)
         logger.info(
             "[checkpoint] ← '%s' loaded – %d rows from '%s'.",
-            name, len(df), data_path,
+            name, len(df), _dp(data_path),
         )
         return df
 

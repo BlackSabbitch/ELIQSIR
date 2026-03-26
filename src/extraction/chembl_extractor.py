@@ -1,27 +1,26 @@
-"""ChEMBL MySQL extractor.
+"""ChEMBL SQLite extractor.
 
-Queries a *local* ChEMBL MySQL database and returns results as a
-``pandas.DataFrame``.  The extractor can also **bootstrap** the ChEMBL
-database from the official MySQL dump file that ships with the project
-(``data/ChEMBLE/chembl_36/chembl_36_mysql/chembl_36_mysql.dmp``).
+Queries a local ChEMBL **SQLite** database and returns results as a
+``pandas.DataFrame``.  The extractor automatically detects the ChEMBL
+version from the folder structure and caches query results as Parquet
+files for fast subsequent loads.
+
+Expected folder structure after downloading and extracting from
+https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/::
+
+    data/ChEMBL/
+    └── chembl_36/                      # ← version detected from folder name
+        └── chembl_36_sqlite/
+            ├── chembl_36.db            # ← SQLite database file
+            └── INSTALL_sqlite
 
 Typical usage::
 
     from src.extraction import ChemblExtractor
 
     extractor = ChemblExtractor(
-        host="localhost",
-        user="root",
-        password="secret",
-        database="chembl_36",
-        dump_dir="data/ChEMBLE/chembl_36/chembl_36_mysql",
+        chembl_dir="data/ChEMBL",
     )
-
-    # First run – creates the DB and loads the dump (~10–30 min):
-    extractor.setup_database()
-
-    # Subsequent runs re-use the already-loaded database:
-    extractor.setup_database()          # no-op if DB already populated
 
     # Run the production bioactivity query
     df = extractor.extract(uniprot_ids=["P00533", "P04637"])
@@ -32,31 +31,25 @@ Typical usage::
 
 from __future__ import annotations
 
-import subprocess
+import re
+import sqlite3
 from pathlib import Path
-from typing import Any
 
-import mysql.connector
 import pandas as pd
 
+from src.config import settings
 from src.utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Name of the sentinel table we check to decide whether the dump has already
-# been loaded.  ``molecule_dictionary`` is always present in ChEMBL.
-_SENTINEL_TABLE = "molecule_dictionary"
-
-# Name of the MySQL dump file (relative to dump_dir).
-_DUMP_FILENAME = "chembl_36_mysql.dmp"
+# Shorthand for safe display of paths (project-relative, never absolute)
+_dp = settings.display_path
 
 
 # ---------------------------------------------------------------------------
-# SQL query templates
+# SQL query template (SQLite compatible)
 # ---------------------------------------------------------------------------
 
-# Full bioactivity extraction joining 7 tables; the caller must supply the
-# list of UniProt accession IDs as a temp-table approach (see ``extract``).
 _BIOACTIVITY_QUERY = """
 SELECT
     act.activity_id,
@@ -91,10 +84,109 @@ JOIN target_dictionary       tar ON ass.tid             = tar.tid
 JOIN docs                    doc ON ass.doc_id          = doc.doc_id
 JOIN target_components       tc  ON tar.tid             = tc.tid
 JOIN component_sequences     seq ON tc.component_id     = seq.component_id
-JOIN _protein_filter         pf  ON seq.accession       = pf.uniprot_id
 WHERE tar.target_type    = 'SINGLE PROTEIN'
   AND act.standard_value IS NOT NULL
+  AND seq.accession IN ({placeholders})
 """
+
+
+# ---------------------------------------------------------------------------
+# Progress bar helper
+# ---------------------------------------------------------------------------
+
+
+def _print_progress(current: int, total: int, prefix: str = "", width: int = 40) -> None:
+    """Print a simple progress bar to stdout."""
+    percent = current / total if total > 0 else 1.0
+    filled = int(width * percent)
+    bar = "█" * filled + "░" * (width - filled)
+    print(f"\r{prefix} |{bar}| {current:,}/{total:,} ({percent:.1%})", end="", flush=True)
+    if current >= total:
+        print()  # newline when complete
+
+
+# ---------------------------------------------------------------------------
+# Version discovery
+# ---------------------------------------------------------------------------
+
+
+def discover_chembl_database(chembl_dir: Path) -> tuple[str, Path]:
+    """Auto-discover the ChEMBL version and database path.
+
+    Scans ``chembl_dir`` for folders matching the pattern ``chembl_XX``
+    (where XX is the version number), then locates the SQLite database
+    file inside the ``chembl_XX_sqlite/`` subdirectory.
+
+    Parameters
+    ----------
+    chembl_dir:
+        Root directory containing extracted ChEMBL downloads (e.g.
+        ``data/ChEMBL/``).
+
+    Returns
+    -------
+    tuple[str, Path]
+        A tuple of (version_string, db_path), e.g.
+        ``("36", Path("data/ChEMBL/chembl_36/chembl_36_sqlite/chembl_36.db"))``.
+
+    Raises
+    ------
+    FileNotFoundError
+        If no ChEMBL version folder or database file is found.
+    """
+    chembl_dir = Path(chembl_dir)
+    if not chembl_dir.exists():
+        raise FileNotFoundError(f"ChEMBL directory not found: {_dp(chembl_dir)}")
+
+    # Pattern: chembl_XX where XX is one or more digits
+    version_pattern = re.compile(r"^chembl_(\d+)$")
+
+    # Find all matching version directories and sort by version number (descending)
+    versions: list[tuple[int, Path]] = []
+    for item in chembl_dir.iterdir():
+        if item.is_dir():
+            match = version_pattern.match(item.name)
+            if match:
+                version_num = int(match.group(1))
+                versions.append((version_num, item))
+
+    if not versions:
+        raise FileNotFoundError(
+            f"No ChEMBL version folder found in '{_dp(chembl_dir)}'. "
+            "Expected folder structure: chembl_XX/ (e.g. chembl_36/). "
+            "Download from https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/ "
+            "and extract into this directory."
+        )
+
+    # Use the latest version (highest number)
+    versions.sort(key=lambda x: x[0], reverse=True)
+    version_num, version_dir = versions[0]
+    version_str = str(version_num)
+
+    # Look for the SQLite subdirectory
+    sqlite_subdir = version_dir / f"chembl_{version_num}_sqlite"
+    if not sqlite_subdir.exists():
+        raise FileNotFoundError(
+            f"SQLite subdirectory not found at '{_dp(sqlite_subdir)}'. "
+            f"Expected: {_dp(version_dir)}/chembl_{version_num}_sqlite/"
+        )
+
+    # Look for the .db file
+    db_file = sqlite_subdir / f"chembl_{version_num}.db"
+    if not db_file.exists():
+        # Try to find any .db file in the directory
+        db_files = list(sqlite_subdir.glob("*.db"))
+        if db_files:
+            db_file = db_files[0]
+        else:
+            raise FileNotFoundError(
+                f"SQLite database file not found at '{_dp(db_file)}'. "
+                "Download the SQLite version from "
+                "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/ "
+                f"and extract it into '{_dp(sqlite_subdir)}'."
+            )
+
+    return version_str, db_file
 
 
 # ---------------------------------------------------------------------------
@@ -103,190 +195,108 @@ WHERE tar.target_type    = 'SINGLE PROTEIN'
 
 
 class ChemblExtractor:
-    """Extract bioactivity data from a local ChEMBL MySQL database.
+    """Extract bioactivity data from a local ChEMBL SQLite database.
 
-    The class also handles **first-time database setup**: call
-    :py:meth:`setup_database` once to create the ``chembl_36`` schema and
-    import the official MySQL dump.  Subsequent calls are safe no-ops.
+    The class automatically detects the ChEMBL version from the folder
+    structure and caches extraction results as Parquet files for fast
+    subsequent loads.
 
     Parameters
     ----------
-    host:
-        MySQL server hostname or IP (e.g. ``"localhost"``).
-    user:
-        MySQL username (same credentials used for the warehouse).
-    password:
-        MySQL password.
-    database:
-        Name of the ChEMBL database to create/use (e.g. ``"chembl_36"``).
-    port:
-        MySQL port; defaults to ``3306``.
-    dump_dir:
-        Directory that contains ``chembl_36_mysql.dmp``.  Defaults to
-        ``data/ChEMBLE/chembl_36/chembl_36_mysql/`` inside the project.
+    chembl_dir:
+        Root directory containing ChEMBL data (e.g. ``data/ChEMBL/``).
+        The extractor will auto-discover the latest version folder.
+    db_path:
+        Explicit path to the SQLite database file. If provided, this
+        overrides auto-discovery.
+    cache_dir:
+        Directory for caching Parquet files. Defaults to
+        ``chembl_dir / "cache"``.
+    use_cache:
+        Whether to use cached Parquet files if available. Defaults to
+        ``True``.
+
+    Attributes
+    ----------
+    version : str
+        Detected ChEMBL version (e.g. ``"36"``).
+    db_path : Path
+        Path to the SQLite database file.
     """
 
     def __init__(
         self,
-        host: str,
-        user: str,
-        password: str,
-        database: str,
-        port: int = 3306,
-        dump_dir: str | Path | None = None,
+        chembl_dir: str | Path | None = None,
+        db_path: str | Path | None = None,
+        cache_dir: str | Path | None = None,
+        use_cache: bool = True,
     ) -> None:
-        self._config: dict[str, Any] = {
-            "host": host,
-            "port": port,
-            "user": user,
-            "password": password,
-            "database": database,
-        }
-        # Config without a database selected – used for DB creation.
-        self._admin_config: dict[str, Any] = {
-            k: v for k, v in self._config.items() if k != "database"
-        }
-        self.dump_dir = Path(dump_dir) if dump_dir else None
+        if db_path is not None:
+            # Explicit path provided
+            self.db_path = Path(db_path)
+            if not self.db_path.exists():
+                raise FileNotFoundError(f"ChEMBL database not found at '{_dp(self.db_path)}'")
+            # Extract version from filename (e.g. chembl_36.db → 36)
+            match = re.search(r"chembl_(\d+)", self.db_path.name)
+            self.version = match.group(1) if match else "unknown"
+            self._chembl_dir = self.db_path.parent.parent.parent
+        elif chembl_dir is not None:
+            # Auto-discover from directory
+            self._chembl_dir = Path(chembl_dir)
+            self.version, self.db_path = discover_chembl_database(self._chembl_dir)
+        else:
+            raise ValueError("Either chembl_dir or db_path must be provided.")
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
+        # Setup cache directory
+        if cache_dir is not None:
+            self._cache_dir = Path(cache_dir)
+        else:
+            self._cache_dir = self._chembl_dir / "cache"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+        self._use_cache = use_cache
 
-    def _connect(self, admin: bool = False) -> mysql.connector.MySQLConnection:
-        """Open and return a new MySQL connection.
+        # Log discovery
+        logger.info("=" * 60)
+        logger.info("ChEMBL SQLite Extractor initialized")
+        logger.info("  Version  : %s", self.version)
+        logger.info("  Database : %s", _dp(self.db_path))
+        logger.info("  Cache dir: %s", _dp(self._cache_dir))
+        logger.info("  Use cache: %s", self._use_cache)
+        logger.info("=" * 60)
 
-        Parameters
-        ----------
-        admin:
-            When ``True`` connects without selecting a database (needed
-            to run ``CREATE DATABASE``).
-        """
-        cfg = self._admin_config if admin else self._config
-        return mysql.connector.connect(**cfg)
+        # Print to stdout for notebook visibility
+        print(f"✓ ChEMBL version {self.version} detected")
+        print(f"  Database: {_dp(self.db_path)}")
+        print(f"  Size: {self.db_path.stat().st_size / (1024**3):.2f} GB")
 
-    def _database_is_populated(self) -> bool:
-        """Return ``True`` when the sentinel table exists and has rows."""
-        try:
-            conn = self._connect()
-            try:
-                cursor = conn.cursor()
-                cursor.execute(
-                    f"SELECT 1 FROM {_SENTINEL_TABLE} LIMIT 1"  # noqa: S608
-                )
-                return cursor.fetchone() is not None
-            finally:
-                conn.close()
-        except Exception:  # noqa: BLE001 – DB absent, wrong credentials, etc.
-            return False
+    def _connect(self) -> sqlite3.Connection:
+        """Open and return a new SQLite connection."""
+        return sqlite3.connect(self.db_path)
 
-    # ------------------------------------------------------------------
-    # Database setup
-    # ------------------------------------------------------------------
+    def _get_cache_path(self, cache_key: str) -> Path:
+        """Return the path for a cache file."""
+        safe_key = re.sub(r"[^\w\-]", "_", cache_key)
+        return self._cache_dir / f"chembl_{self.version}_{safe_key}.parquet"
 
-    def setup_database(self, force: bool = False) -> None:
-        """Create the ChEMBL database and load the MySQL dump.
+    def _load_from_cache(self, cache_key: str) -> pd.DataFrame | None:
+        """Load DataFrame from cache if it exists."""
+        if not self._use_cache:
+            return None
+        cache_path = self._get_cache_path(cache_key)
+        if cache_path.exists():
+            logger.info("Loading from cache: %s", _dp(cache_path))
+            print(f"📂 Loading from cache: {_dp(cache_path)}")
+            return pd.read_parquet(cache_path)
+        return None
 
-        This is a **safe, idempotent** operation:
-
-        * If the database already exists **and** contains data, the method
-          exits immediately (unless ``force=True``).
-        * If the database is missing or empty, it creates it and pipes the
-          ``.dmp`` file through the ``mysql`` CLI — exactly the two-step
-          process described in the ``INSTALL_mysql`` file shipped with the
-          ChEMBL download.
-
-        Parameters
-        ----------
-        force:
-            When ``True`` the dump is always re-loaded, even if the
-            database already appears populated.  Useful after a corrupt
-            import.
-
-        Raises
-        ------
-        FileNotFoundError
-            If ``dump_dir`` is not set or the ``.dmp`` file cannot be
-            found at the expected path.
-        RuntimeError
-            If the ``mysql`` CLI command exits with a non-zero status.
-        """
-        if self.dump_dir is None:
-            raise FileNotFoundError(
-                "dump_dir was not supplied.  Pass it to ChemblExtractor() "
-                "or set CHEMBL_DUMP_DIR in your .env file."
-            )
-
-        dump_file = self.dump_dir / _DUMP_FILENAME
-        if not dump_file.exists():
-            raise FileNotFoundError(
-                f"ChEMBL dump file not found at '{dump_file}'. "
-                "Download chembl_36_mysql.tar.gz from "
-                "https://ftp.ebi.ac.uk/pub/databases/chembl/ChEMBLdb/latest/ "
-                f"and extract it into '{self.dump_dir}'."
-            )
-
-        if not force and self._database_is_populated():
-            logger.info(
-                "ChEMBL database '%s' is already populated – skipping setup.",
-                self._config["database"],
-            )
-            return
-
-        db_name = self._config["database"]
-        host = self._config["host"]
-        port = self._config["port"]
-        user = self._config["user"]
-        password = self._config["password"]
-
-        # ── Step 1: CREATE DATABASE IF NOT EXISTS ──────────────────────
-        logger.info("Creating ChEMBL database '%s' if it does not exist…", db_name)
-        admin_conn = self._connect(admin=True)
-        try:
-            cursor = admin_conn.cursor()
-            cursor.execute(
-                f"CREATE DATABASE IF NOT EXISTS `{db_name}` "
-                "DEFAULT CHARACTER SET utf8 "
-                "DEFAULT COLLATE utf8_general_ci"
-            )
-            admin_conn.commit()
-        finally:
-            admin_conn.close()
-        logger.info("Database '%s' ready.", db_name)
-
-        # ── Step 2: Load dump via mysql CLI ────────────────────────────
-        logger.info(
-            "Loading ChEMBL dump from '%s' into '%s'… "
-            "This may take 10–30 minutes.",
-            dump_file,
-            db_name,
-        )
-        cmd = [
-            "mysql",
-            f"-u{user}",
-            f"-p{password}",
-            f"-h{host}",
-            f"-P{port}",
-            db_name,
-        ]
-        with dump_file.open("rb") as dmp:
-            result = subprocess.run(
-                cmd,
-                stdin=dmp,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"mysql import failed (exit {result.returncode}):\n"
-                + result.stderr.decode(errors="replace")
-            )
-
-        logger.info("ChEMBL dump loaded successfully into '%s'.", db_name)
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+    def _save_to_cache(self, df: pd.DataFrame, cache_key: str) -> Path:
+        """Save DataFrame to cache and return the path."""
+        cache_path = self._get_cache_path(cache_key)
+        df.to_parquet(cache_path, index=False, compression="snappy")
+        size_mb = cache_path.stat().st_size / (1024**2)
+        logger.info("Saved to cache: %s (%.1f MB)", _dp(cache_path), size_mb)
+        print(f"💾 Saved to cache: {_dp(cache_path)} ({size_mb:.1f} MB)")
+        return cache_path
 
     def query(self, sql: str) -> pd.DataFrame:
         """Execute *sql* and return the result as a ``DataFrame``.
@@ -294,19 +304,14 @@ class ChemblExtractor:
         Parameters
         ----------
         sql:
-            Any valid MySQL SELECT statement.
+            Any valid SQLite SELECT statement.
 
         Returns
         -------
         pd.DataFrame
             Query result; column names match the SELECT aliases.
-
-        Raises
-        ------
-        mysql.connector.Error
-            On any database-level error.
         """
-        logger.info("Executing ad-hoc ChEMBL query:\n%s", sql.strip())
+        logger.info("Executing ad-hoc ChEMBL query:\n%s", sql.strip()[:200])
         conn = self._connect()
         try:
             df = pd.read_sql_query(sql, conn)
@@ -315,76 +320,174 @@ class ChemblExtractor:
         logger.info("Query returned %d rows.", len(df))
         return df
 
-    def extract(self, uniprot_ids: list[str]) -> pd.DataFrame:
+    def extract(
+        self,
+        uniprot_ids: list[str],
+        batch_size: int = 500,
+        use_cache: bool | None = None,
+    ) -> pd.DataFrame:
         """Extract bioactivity records for the supplied UniProt accessions.
 
-        The method uses a *temporary table* strategy to avoid generating
-        huge ``IN (…)`` clauses: it creates a session-scoped temporary
-        table ``_protein_filter``, bulk-inserts the accession list, and
-        then performs an inner JOIN against it.  The table is automatically
-        dropped when the connection is closed.
+        The method batches queries to handle large ID lists efficiently and
+        displays a progress bar during extraction.  Results are cached as a
+        Parquet file for fast subsequent loads.
 
         Parameters
         ----------
         uniprot_ids:
             List of UniProt accession strings (e.g. ``["P00533", "P04637"]``).
+        batch_size:
+            Number of UniProt IDs to query per batch. Defaults to 500.
+        use_cache:
+            Override instance-level cache setting. If ``None``, uses the
+            instance setting.
 
         Returns
         -------
         pd.DataFrame
-            Bioactivity records with columns: ``activity_id``,
-            ``drug_chembl_id``, ``drug_name``, ``molecule_type``,
-            ``molecular_weight``, ``canonical_smiles``,
-            ``target_chembl_id``, ``target_name``, ``organism``,
-            ``standard_type``, ``standard_value``, ``standard_units``,
-            ``pchembl_value``, ``assay_type``, ``assay_description``,
-            ``assay_organism``, ``confidence_score``, ``article_title``,
-            ``journal``, ``year``, ``pubmed_id``, ``doi``,
-            ``uniprot_id``.
+            Bioactivity records with 23 columns including ``activity_id``,
+            ``drug_chembl_id``, ``uniprot_id``, etc.
 
         Raises
         ------
         ValueError
             If *uniprot_ids* is empty.
-        mysql.connector.Error
-            On any database-level error.
         """
         if not uniprot_ids:
             raise ValueError("uniprot_ids must not be empty.")
 
-        unique_ids = list(dict.fromkeys(uniprot_ids))  # preserve order, deduplicate
-        logger.info(
-            "Connecting to ChEMBL MySQL at '%s/%s' – filtering on %d unique proteins.",
-            self._config["host"],
-            self._config["database"],
-            len(unique_ids),
-        )
+        # Deduplicate and sort for consistent cache keys
+        unique_ids = sorted(set(uniprot_ids))
+        num_proteins = len(unique_ids)
 
+        logger.info(
+            "ChEMBL extraction requested for %d unique proteins.", num_proteins
+        )
+        print(f"\n🔬 Extracting bioactivity data for {num_proteins:,} proteins...")
+
+        # Check cache
+        should_use_cache = use_cache if use_cache is not None else self._use_cache
+        if should_use_cache:
+            # Create a cache key based on protein count and hash
+            # (Full ID list would make filename too long)
+            id_hash = hash(tuple(unique_ids)) % 10**8
+            cache_key = f"bioactivity_{num_proteins}p_{id_hash}"
+            cached_df = self._load_from_cache(cache_key)
+            if cached_df is not None:
+                print(f"✓ Loaded {len(cached_df):,} records from cache")
+                return cached_df
+        else:
+            cache_key = None
+
+        # Query in batches with progress bar
         conn = self._connect()
         try:
-            cursor = conn.cursor()
+            all_dfs: list[pd.DataFrame] = []
+            total_batches = (num_proteins + batch_size - 1) // batch_size
 
-            # Temporary table is session-scoped in MySQL: dropped automatically
-            # when the connection closes.
-            cursor.execute("DROP TEMPORARY TABLE IF EXISTS _protein_filter")
-            cursor.execute(
-                "CREATE TEMPORARY TABLE _protein_filter "
-                "(uniprot_id VARCHAR(20) NOT NULL PRIMARY KEY)"
-            )
-            cursor.executemany(
-                "INSERT IGNORE INTO _protein_filter (uniprot_id) VALUES (%s)",
-                [(uid,) for uid in unique_ids],
-            )
-            conn.commit()
-            logger.debug(
-                "Temporary filter table loaded with %d accessions.", len(unique_ids)
-            )
+            print(f"  Querying ChEMBL v{self.version} in {total_batches} batches...")
 
-            df = pd.read_sql_query(_BIOACTIVITY_QUERY, conn)
+            for i in range(0, num_proteins, batch_size):
+                batch = unique_ids[i : i + batch_size]
+                batch_num = i // batch_size + 1
+
+                # Build query with placeholders
+                placeholders = ",".join("?" * len(batch))
+                query = _BIOACTIVITY_QUERY.format(placeholders=placeholders)
+
+                # Execute query
+                df_batch = pd.read_sql_query(query, conn, params=batch)
+                all_dfs.append(df_batch)
+
+                # Update progress bar
+                _print_progress(
+                    min(i + batch_size, num_proteins),
+                    num_proteins,
+                    prefix="  Progress",
+                )
+
+                logger.debug(
+                    "Batch %d/%d: %d proteins → %d records",
+                    batch_num,
+                    total_batches,
+                    len(batch),
+                    len(df_batch),
+                )
+
+            # Combine all batches
+            df = pd.concat(all_dfs, ignore_index=True) if all_dfs else pd.DataFrame()
+
         finally:
             conn.close()
 
         logger.info(
             "ChEMBL extraction complete – %d bioactivity records retrieved.", len(df)
         )
+        print(f"\n✓ Extracted {len(df):,} bioactivity records")
+
+        # Summary statistics
+        if len(df) > 0:
+            print(f"  Unique drugs   : {df['drug_chembl_id'].nunique():,}")
+            print(f"  Unique targets : {df['target_chembl_id'].nunique():,}")
+            print(f"  Unique proteins: {df['uniprot_id'].nunique():,}")
+            print(f"  With PubMed ID : {df['pubmed_id'].notna().sum():,}")
+
+        # Save to cache
+        if cache_key is not None and len(df) > 0:
+            self._save_to_cache(df, cache_key)
+
         return df
+
+    def get_table_info(self) -> pd.DataFrame:
+        """Return information about all tables in the database."""
+        sql = """
+        SELECT name, type
+        FROM sqlite_master
+        WHERE type IN ('table', 'view')
+        ORDER BY name
+        """
+        return self.query(sql)
+
+    def get_row_counts(self, tables: list[str] | None = None) -> dict[str, int]:
+        """Return row counts for specified tables (or key tables if None)."""
+        if tables is None:
+            tables = [
+                "activities",
+                "molecule_dictionary",
+                "assays",
+                "target_dictionary",
+                "docs",
+                "compound_structures",
+            ]
+
+        counts = {}
+        conn = self._connect()
+        try:
+            cursor = conn.cursor()
+            for table in tables:
+                try:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")  # noqa: S608
+                    counts[table] = cursor.fetchone()[0]
+                except sqlite3.OperationalError:
+                    counts[table] = -1  # Table doesn't exist
+        finally:
+            conn.close()
+
+        return counts
+
+    def print_database_info(self) -> None:
+        """Print summary information about the ChEMBL database."""
+        print(f"\n{'='*60}")
+        print(f"ChEMBL v{self.version} Database Summary")
+        print(f"{'='*60}")
+        print(f"Database file: {_dp(self.db_path)}")
+        print(f"Size: {self.db_path.stat().st_size / (1024**3):.2f} GB")
+        print("\nKey table row counts:")
+        
+        counts = self.get_row_counts()
+        for table, count in counts.items():
+            if count >= 0:
+                print(f"  {table:25s}: {count:>12,}")
+            else:
+                print(f"  {table:25s}: (not found)")
+        print(f"{'='*60}\n")

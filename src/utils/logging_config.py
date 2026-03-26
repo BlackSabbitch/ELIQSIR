@@ -70,8 +70,13 @@ def get_logger(name: str, level: Optional[str] = None) -> logging.Logger:
     if level is not None:
         logger.setLevel(level.upper())
 
-    # Prevent propagating duplicate messages when the function is called
-    # multiple times for the same logger name.
+    # Guard against duplicate handlers when modules are reloaded
+    # (e.g. importlib.reload() in notebooks).  The root logger already
+    # owns the stream handler, so child loggers should never have their
+    # own handlers — remove any that crept in during a reload.
+    if logger.handlers:
+        logger.handlers.clear()
+
     logger.propagate = True
 
     return logger

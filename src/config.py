@@ -50,20 +50,15 @@ class Settings:
     )
 
     # ------------------------------------------------------------------
-    # ChEMBL source database
-    # Credentials (host / port / user / password) are shared with the
-    # warehouse MySQL settings above.  Only the database name differs.
+    # ChEMBL SQLite source database
+    # The extractor auto-discovers the ChEMBL version from folder structure.
+    # Expected structure: data/ChEMBL/chembl_XX/chembl_XX_sqlite/chembl_XX.db
     # ------------------------------------------------------------------
-    chembl_mysql_db: str = field(
-        default_factory=lambda: os.getenv("CHEMBL_MYSQL_DB", "chembl_36")
-    )
-    # Directory that contains chembl_36_mysql.dmp (and INSTALL_mysql).
-    # Defaults to the bundled data/ChEMBL/chembl_36/chembl_36_mysql/ folder.
-    chembl_dump_dir: Path = field(
+    chembl_dir: Path = field(
         default_factory=lambda: Path(
             os.getenv(
-                "CHEMBL_DUMP_DIR",
-                str(_PROJECT_ROOT / "data" / "ChEMBL" / "chembl_36" / "chembl_36_mysql"),
+                "CHEMBL_DIR",
+                str(_PROJECT_ROOT / "data" / "ChEMBL"),
             )
         )
     )
@@ -131,6 +126,22 @@ class Settings:
             f"mysql+mysqlconnector://{self.mysql_user}:{self.mysql_password}"
             f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_db}"
         )
+
+    def display_path(self, path: str | Path) -> str:
+        """Return a project-relative path string safe for display/logging.
+
+        Converts an absolute path to a path relative to the project root
+        (e.g. ``data/ChEMBL/chembl_36/...``), so that the user's home
+        directory is never leaked into notebook output or log files.
+
+        Falls back to ``str(path)`` when the path is not under the project
+        root (e.g. ``/tmp/something``).
+        """
+        try:
+            return str(Path(path).resolve().relative_to(self.project_root))
+        except ValueError:
+            # Path is outside the project tree — return as-is
+            return str(path)
 
     def validate(self) -> None:
         """Raise ``ValueError`` for missing required settings."""

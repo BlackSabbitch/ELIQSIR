@@ -357,5 +357,5 @@ def run_pipeline(
 def _save_df(df: pd.DataFrame, path: Path, saver: Any) -> None:
     """Persist *df* to *path* using the supplied *saver* callable."""
     saver(df, path)
-    logger.info("Saved %d rows to '%s'.", len(df), path)
+    logger.info("Saved %d rows to '%s'.", len(df), settings.display_path(path))
 

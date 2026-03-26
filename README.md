@@ -119,6 +119,17 @@ that the database is already populated and skip the import entirely.
 > mysql -uUSERNAME -pPASSWORD [-hHOST -PPORT] chembl_36 < chembl_36_mysql.dmp
 > ```
 
+**If dumping is delayed try:** adding the following inside a new file like `sudo nano /etc/my.cnf.d/chembl-optimizations.cnf`
+```bash
+[mysqld]
+innodb_buffer_pool_size = 2G
+innodb_log_buffer_size = 64M
+innodb_flush_log_at_trx_commit = 2
+innodb_doublewrite = 0
+bulk_insert_buffer_size = 512M
+max_allowed_packet = 1G
+```
+
 ### 4 – Create the MySQL database
 
 ```sql
