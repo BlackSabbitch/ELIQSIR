@@ -1,0 +1,37 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0" version="29.6.6">
+  <diagram name="Page-1" id="6BEozbW6oJsi31TKUwgZ">
+    <mxGraphModel dx="1747" dy="889" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="fact" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;spacingLeft=5;" value="&lt;b&gt;fact_bioactivity&lt;/b&gt;&lt;hr&gt;🔑 activity_id (PK)&lt;br&gt;🔗 protein_key (FK)&lt;br&gt;🔗 drug_key (FK)&lt;br&gt;🔗 article_key (FK)&lt;br&gt;standard_type&lt;br&gt;standard_value&lt;br&gt;standard_units&lt;br&gt;pchembl_value&lt;br&gt;confidence_score&lt;br&gt;assay_type&lt;br&gt;assay_description" vertex="1">
+          <mxGeometry height="210" width="180" x="300" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="prot" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#d5e8d4;strokeColor=#82b366;spacingLeft=5;" value="&lt;b&gt;dim_protein&lt;/b&gt;&lt;hr&gt;🔑 protein_key (PK)&lt;br&gt;🆔 uniprot_id (Unique)&lt;br&gt;gene_names&lt;br&gt;protein_name&lt;br&gt;sequence&lt;br&gt;sequence_length&lt;br&gt;protein_families" vertex="1">
+          <mxGeometry height="150" width="180" x="40" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="drug" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;spacingLeft=5;" value="&lt;b&gt;dim_drug&lt;/b&gt;&lt;hr&gt;🔑 drug_key (PK)&lt;br&gt;🆔 drug_chembl_id (Unique)&lt;br&gt;drug_name&lt;br&gt;canonical_smiles&lt;br&gt;standard_inchi_key" vertex="1">
+          <mxGeometry height="130" width="200" x="560" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="art" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#f8cecc;strokeColor=#b85450;spacingLeft=5;" value="&lt;b&gt;dim_article&lt;/b&gt;&lt;hr&gt;🔑 article_key (PK)&lt;br&gt;🆔 pubmed_id (Unique)&lt;br&gt;article_title&lt;br&gt;journal&lt;br&gt;year&lt;br&gt;abstract&lt;br&gt;doi&lt;br&gt;first_author" vertex="1">
+          <mxGeometry height="170" width="180" x="300" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="struc" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;spacingLeft=5;" value="&lt;b&gt;dim_structure&lt;/b&gt;&lt;hr&gt;🔑 structure_key (PK)&lt;br&gt;pdb_id&lt;br&gt;chain_id&lt;br&gt;🔗 uniprot_id (FK)&lt;br&gt;resolution&lt;br&gt;coverage&lt;br&gt;method&lt;br&gt;unp_start&lt;br&gt;unp_end" vertex="1">
+          <mxGeometry height="170" width="180" x="40" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_prot" edge="1" parent="1" source="prot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0;entryY=0.25;entryDx=0;entryDy=0;exitX=1;exitY=0.25;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_drug" edge="1" parent="1" source="drug" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=1;entryY=0.25;entryDx=0;entryDy=0;exitX=0;exitY=0.25;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_art" edge="1" parent="1" source="art" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge_struc" edge="1" parent="1" source="struc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="prot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

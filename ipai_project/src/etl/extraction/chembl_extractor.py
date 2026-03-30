@@ -58,6 +58,7 @@ SELECT
     mol.molecule_type,
     cp.mw_freebase                 AS molecular_weight,
     cs.canonical_smiles,
+    cs.standard_inchi_key,
     tar.chembl_id                  AS target_chembl_id,
     tar.pref_name                  AS target_name,
     tar.organism,

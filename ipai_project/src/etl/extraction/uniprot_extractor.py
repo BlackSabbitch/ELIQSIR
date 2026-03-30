@@ -37,6 +37,7 @@ _DEFAULT_FIELDS = (
     "protein_name,"
     "organism_name,"
     "sequence,"
+    "length,"             
     "protein_families,"
     "ec,"
     "cc_catalytic_activity"
@@ -47,12 +48,13 @@ _DEFAULT_BASE_URL = "https://rest.uniprot.org/uniprotkb/stream"
 # Keys are the raw TSV header names; values are the snake_case aliases used
 # throughout the pipeline.
 _EXPECTED_COLUMNS = {
-    "Entry": "accession",
+    "Entry": "uniprot_id",             
     "Gene Names": "gene_names",
     "Protein names": "protein_name",
     "Organism": "organism_name",
-    "Sequence": "protein_sequence",
-    "Protein families": "protein_class",
+    "Sequence": "sequence",            
+    "Length": "sequence_length",       
+    "Protein families": "protein_families", 
     "EC number": "ec_number",
     "Catalytic activity": "catalyzed_reaction",
 }
