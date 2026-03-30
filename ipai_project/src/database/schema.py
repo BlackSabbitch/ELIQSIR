@@ -85,7 +85,7 @@ TABLE_COLUMNS: dict[str, list[str]] = {
         "year",
         "abstract",
         "doi",
-        "first_author",
+        "authors",
     ],
     "dim_structure": [
         "structure_key",

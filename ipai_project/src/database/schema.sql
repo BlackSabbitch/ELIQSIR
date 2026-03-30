@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS dim_article (
     year            SMALLINT                  COMMENT 'Publication year',
     abstract        TEXT                      COMMENT 'Full abstract text - primary IR corpus',
     doi             VARCHAR(300)              COMMENT 'Digital Object Identifier (when available)',
-    first_author    VARCHAR(300)              COMMENT 'First author surname, initials (when available)',
+    authors         TEXT                      COMMENT 'Full list of authors separated by semicolons',
 
     PRIMARY KEY (article_key),
     UNIQUE  KEY uq_dim_article_pubmed (pubmed_id),
