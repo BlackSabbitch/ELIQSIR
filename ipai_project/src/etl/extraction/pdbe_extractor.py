@@ -126,7 +126,7 @@ class PdbeExtractor:
                 records.append(row)
             return records
         except requests.RequestException as exc:
-            logger.warning("Skipping %s – request failed: %s", uniprot_id, exc)
+            logger.warning("Skipping %s - request failed: %s", uniprot_id, exc)
             return []
 
     # ------------------------------------------------------------------
@@ -160,7 +160,7 @@ class PdbeExtractor:
 
             if i % _LOG_EVERY_N == 0:
                 logger.info(
-                    "Progress: %d / %d proteins processed – %d structures collected.",
+                    "Progress: %d / %d proteins processed - %d structures collected.",
                     i,
                     total,
                     len(all_records),
@@ -170,7 +170,7 @@ class PdbeExtractor:
 
         df = pd.DataFrame(all_records)
         logger.info(
-            "PDBe extraction complete – %d structures across %d proteins.",
+            "PDBe extraction complete - %d structures across %d proteins.",
             len(df),
             total,
         )

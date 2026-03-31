@@ -46,7 +46,7 @@ class PubMedExtractor:
     Parameters
     ----------
     email:
-        **Required by NCBI** – identifies your application to the server.
+        **Required by NCBI** - identifies your application to the server.
         Supply a valid e-mail address to avoid being blocked.
     batch_size:
         Number of PubMed IDs sent per HTTP request.  NCBI recommends
@@ -234,7 +234,7 @@ class PubMedExtractor:
         total = len(unique_ids)
 
         if total == 0:
-            logger.warning("No valid PubMed IDs supplied – returning empty DataFrame.")
+            logger.warning("No valid PubMed IDs supplied - returning empty DataFrame.")
             return pd.DataFrame(
                 columns=["pubmed_id", "abstract", "authors", "pub_date", "year", "month", "doi"]
             )
@@ -258,5 +258,5 @@ class PubMedExtractor:
             all_rows,
             columns=["pubmed_id", "abstract", "authors", "pub_date", "year", "month", "doi"],
         )
-        logger.info("PubMed extraction complete – %d abstracts retrieved.", len(df))
+        logger.info("PubMed extraction complete - %d abstracts retrieved.", len(df))
         return df

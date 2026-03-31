@@ -155,7 +155,7 @@ class UniProtExtractor:
         """
         params = self._build_params()
         logger.info(
-            "Fetching UniProt data – organism_id=%s, reviewed=%s",
+            "Fetching UniProt data - organism_id=%s, reviewed=%s",
             self.organism_id,
             self.reviewed,
         )
@@ -166,5 +166,5 @@ class UniProtExtractor:
         df = pd.read_csv(StringIO(response.text), sep="\t")
         df = self._normalise_columns(df)
 
-        logger.info("UniProt extraction complete – %d proteins retrieved.", len(df))
+        logger.info("UniProt extraction complete - %d proteins retrieved.", len(df))
         return df

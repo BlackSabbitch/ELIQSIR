@@ -286,7 +286,7 @@ class ChemblExtractor:
         cache_path = self._get_cache_path(cache_key)
         if cache_path.exists():
             logger.info("Loading from cache: %s", _dp(cache_path))
-            print(f"📂 Loading from cache: {_dp(cache_path)}")
+            print(f"Loading from cache: {_dp(cache_path)}")
             return pd.read_parquet(cache_path)
         return None
 
@@ -296,7 +296,7 @@ class ChemblExtractor:
         df.to_parquet(cache_path, index=False, compression="snappy")
         size_mb = cache_path.stat().st_size / (1024**2)
         logger.info("Saved to cache: %s (%.1f MB)", _dp(cache_path), size_mb)
-        print(f"💾 Saved to cache: {_dp(cache_path)} ({size_mb:.1f} MB)")
+        print(f"Saved to cache: {_dp(cache_path)} ({size_mb:.1f} MB)")
         return cache_path
 
     def query(self, sql: str) -> pd.DataFrame:
@@ -364,7 +364,7 @@ class ChemblExtractor:
         logger.info(
             "ChEMBL extraction requested for %d unique proteins.", num_proteins
         )
-        print(f"\n🔬 Extracting bioactivity data for {num_proteins:,} proteins...")
+        print(f"\nExtracting bioactivity data for {num_proteins:,} proteins...")
 
         # Check cache
         should_use_cache = use_cache if use_cache is not None else self._use_cache
@@ -375,7 +375,7 @@ class ChemblExtractor:
             cache_key = f"bioactivity_{num_proteins}p_{id_hash}"
             cached_df = self._load_from_cache(cache_key)
             if cached_df is not None:
-                print(f"✓ Loaded {len(cached_df):,} records from cache")
+                print(f"Loaded {len(cached_df):,} records from cache")
                 return cached_df
         else:
             cache_key = None
@@ -422,7 +422,7 @@ class ChemblExtractor:
             conn.close()
 
         logger.info(
-            "ChEMBL extraction complete – %d bioactivity records retrieved.", len(df)
+            "ChEMBL extraction complete - %d bioactivity records retrieved.", len(df)
         )
         print(f"\n✓ Extracted {len(df):,} bioactivity records")
 
