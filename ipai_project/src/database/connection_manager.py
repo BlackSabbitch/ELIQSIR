@@ -3,10 +3,13 @@ import mysql.connector
 from mysql.connector import Error, pooling
 from dotenv import load_dotenv
 from contextlib import contextmanager
+import pandas as pd
+import warnings
 
-# Load environment variables from the .env file
-load_dotenv()
-
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(current_dir, '..', '..'))
+env_path = os.path.join(project_root, '.env')
+load_dotenv(dotenv_path=env_path)
 class ConnectionManager:
     def __init__(self):
         # Target DWH (AWS RDS) configuration parameters
@@ -56,6 +59,14 @@ class ConnectionManager:
         finally:
             if conn and conn.is_connected():
                 conn.close()
+
+    def fetch_to_dataframe(self, query: str) -> pd.DataFrame:
+        """Executes a query and returns a pandas DataFrame directly."""
+        with self.get_dwh_connection() as conn:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', UserWarning)
+                return pd.read_sql(query, con=conn)
+            
 
 # Initialize the connection manager instance for import
 db_manager = ConnectionManager()

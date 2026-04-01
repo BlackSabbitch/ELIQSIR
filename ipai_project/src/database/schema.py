@@ -30,19 +30,9 @@ Usage::
 """
 
 from __future__ import annotations
-
-import re
 from pathlib import Path
-
-from sqlalchemy import Engine, text
-
 from src.utils.logging_config import get_logger
-
 logger = get_logger(__name__)
-
-# ---------------------------------------------------------------------------
-# Filesystem reference to the DDL source
-# ---------------------------------------------------------------------------
 
 #: Absolute path to the MySQL DDL file - the single source of truth.
 SCHEMA_SQL_PATH: Path = Path(__file__).parent / "schema.sql"
@@ -123,27 +113,3 @@ TABLE_PRIMARY_KEYS: dict[str, str] = {
     "fact_bioactivity": "activity_id",
 }
 
-# ---------------------------------------------------------------------------
-# DDL helpers
-# ---------------------------------------------------------------------------
-
-
-def _mysql_to_sqlite_ddl(sql: str) -> str:
-    """Translate a MySQL DDL script into SQLite-compatible statements.
-
-    This shim is used exclusively during testing (in-memory SQLite) so that
-    the test suite does not require a running MySQL server.  It strips or
-    rewrites MySQL-only clauses while preserving the logical schema:
-
-    * Removes ``ENGINE``, ``DEFAULT CHARSET``, ``COLLATE``, ``ROW_FORMAT``
-      table options.
-    * Removes ``FULLTEXT KEY`` index definitions.
-    * Removes ``SET FOREIGN_KEY_CHECKS`` statements.
-    * Removes inline ``COMMENT`` column clauses.
-    * Rewrites ``TINYINT UNSIGNED`` -> ``INTEGER``.
-    * Rewrites ``BIGINT`` / ``SMALLINT`` / ``DOUBLE`` -> ``INTEGER`` / ``REAL``.
-    * Rewrites ``VARCHAR(n)`` -> ``TEXT``.
-    * Removes ``KEY ...`` and ``UNIQUE KEY ...`` inline index declarations
-      (SQLite handles uniqueness via ``UNIQUE`` on column definitions).
-    * Removes trailing commas left after stripping index lines.
-    """
