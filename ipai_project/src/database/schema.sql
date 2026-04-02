@@ -15,12 +15,38 @@
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- Drop existing tables to cleanly recreate the schema
+-- Drop existing tables to cleanly recreate the schema (Commented out for safety)
 -- DROP TABLE IF EXISTS fact_bioactivity;
 -- DROP TABLE IF EXISTS dim_structure;
 -- DROP TABLE IF EXISTS dim_article;
 -- DROP TABLE IF EXISTS dim_drug;
 -- DROP TABLE IF EXISTS dim_protein;
+-- DROP TABLE IF EXISTS dim_date;
+
+-- -----------------------------------------------------------------------------
+-- DimDate (Temporal Dimension)
+-- Grain: one row per day.
+-- Required for ML Temporal Split (Out-of-Distribution validation)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS dim_date (
+    date_key        INT           NOT NULL COMMENT 'Surrogate key format YYYYMMDD',
+    full_date       DATE          NOT NULL COMMENT 'Standard SQL date format',
+    year            SMALLINT      COMMENT 'Calendar year',
+    month           SMALLINT      COMMENT 'Calendar month (1-12)',
+    day             SMALLINT      COMMENT 'Day of the month (1-31)',
+    quarter         SMALLINT      COMMENT 'Calendar quarter (1-4)',
+    day_of_week     SMALLINT      COMMENT 'Day of week (0=Monday, 6=Sunday)',
+    is_weekend      BOOLEAN       COMMENT '1 if weekend, 0 otherwise',
+    fractional_year DOUBLE        COMMENT 'Continuous time feature for GNNs (e.g., 2023.5)',
+    epoch_time      BIGINT        COMMENT 'Unix epoch time in seconds',
+
+    PRIMARY KEY (date_key),
+    INDEX ix_dim_date_year (year)
+)
+ENGINE = InnoDB
+DEFAULT CHARSET = utf8mb4
+COLLATE = utf8mb4_unicode_ci
+COMMENT = 'Temporal dimension for rolling window ML validation';
 
 -- -----------------------------------------------------------------------------
 -- DimProtein
@@ -140,8 +166,10 @@ CREATE TABLE IF NOT EXISTS fact_bioactivity (
     protein_key         INT             NOT NULL  COMMENT 'FK -> dim_protein',
     drug_key            INT             NOT NULL  COMMENT 'FK -> dim_drug',
     article_key         INT                       COMMENT 'FK -> dim_article (nullable)',
+    date_key            INT             NOT NULL DEFAULT 19000101 COMMENT 'FK -> dim_date',
 
     -- Measures
+    date_precision      ENUM('Exact', 'Month', 'Year', 'Unknown') NOT NULL DEFAULT 'Unknown' COMMENT 'Precision of the temporal anchor',
     standard_type       VARCHAR(100)              COMMENT 'Activity type: IC50, Ki, Kd, EC50, ...',
     standard_value      DOUBLE                    COMMENT 'Measured numerical value',
     standard_units      VARCHAR(50)               COMMENT 'Units of standard_value (e.g. nM)',
@@ -157,6 +185,7 @@ CREATE TABLE IF NOT EXISTS fact_bioactivity (
     INDEX ix_fact_protein  (protein_key),
     INDEX ix_fact_drug     (drug_key),
     INDEX ix_fact_article  (article_key),
+    INDEX ix_fact_date     (date_key),
 
     CONSTRAINT fk_fact_protein
         FOREIGN KEY (protein_key)
@@ -174,6 +203,12 @@ CREATE TABLE IF NOT EXISTS fact_bioactivity (
         FOREIGN KEY (article_key)
         REFERENCES  dim_article (article_key)
         ON DELETE SET NULL
+        ON UPDATE CASCADE,
+
+    CONSTRAINT fk_fact_date
+        FOREIGN KEY (date_key)
+        REFERENCES  dim_date (date_key)
+        ON DELETE RESTRICT
         ON UPDATE CASCADE
 )
 ENGINE = InnoDB

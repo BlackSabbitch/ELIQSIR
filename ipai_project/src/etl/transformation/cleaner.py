@@ -199,8 +199,7 @@ class DataCleaner:
 
     def clean_pubmed(self, df: pd.DataFrame) -> pd.DataFrame:
         """Clean the raw PubMed abstract table.
-        
-        Now properly preserves authors, doi, journal, year, and title.
+           Preserves authors, doi, journal, year, title, and pub_date for temporal modeling.
         """
         required = ["pubmed_id", "abstract", "authors"]
         _assert_columns(df, required, "clean_pubmed")
@@ -217,7 +216,12 @@ class DataCleaner:
         if "year" in out.columns:
             out["year"] = pd.to_numeric(out["year"], errors="coerce").astype("Int64")
 
-        # 4. Normalise abstract and authors text (collapse multiple spaces).
+        # 4. Clean pub_date (prepare for datetime parsing in builder)
+        # We strip whitespace to prevent pd.to_datetime from failing silently on edge cases.
+        if "pub_date" in out.columns:
+            out["pub_date"] = out["pub_date"].astype(str).str.strip()
+
+        # 5. Normalise abstract and authors text (collapse multiple spaces).
         for col in ("abstract", "authors"):
             if col in out.columns:
                 out[col] = (
@@ -227,12 +231,12 @@ class DataCleaner:
                     .apply(lambda t: re.sub(r"\s+", " ", t))
                 )
 
-        # 5. Empty → NA for all string columns.
+        # 6. Empty/Invalid strings -> NA for all string columns.
         str_cols = out.select_dtypes(include="object").columns
         for col in str_cols:
-            out[col] = out[col].replace({"nan": pd.NA, "": pd.NA})
+            out[col] = out[col].replace({"nan": pd.NA, "None": pd.NA, "": pd.NA})
 
-        # 6. Deduplicate.
+        # 7. Deduplicate.
         before = len(out)
         out = out.drop_duplicates(subset=["pubmed_id"], keep="first")
         if (dropped := before - len(out)):
