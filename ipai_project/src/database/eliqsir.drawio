@@ -4,8 +4,11 @@
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="fact" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;spacingLeft=5;" value="&lt;b&gt;fact_bioactivity&lt;/b&gt;&lt;hr&gt;🔑 activity_id (PK)&lt;br&gt;🔗 protein_key (FK)&lt;br&gt;🔗 drug_key (FK)&lt;br&gt;🔗 article_key (FK)&lt;br&gt;standard_type&lt;br&gt;standard_value&lt;br&gt;standard_units&lt;br&gt;pchembl_value&lt;br&gt;confidence_score&lt;br&gt;assay_type&lt;br&gt;assay_description&lt;br&gt;assay_organism" vertex="1">
-          <mxGeometry height="230" width="180" x="300" y="320" as="geometry" />
+        <mxCell id="fact" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;spacingLeft=5;" value="&lt;b&gt;fact_bioactivity&lt;/b&gt;&lt;hr&gt;🔑 activity_id (PK)&lt;br&gt;🔗 protein_key (FK)&lt;br&gt;🔗 drug_key (FK)&lt;br&gt;🔗 article_key (FK)&lt;br&gt;&lt;font color=&quot;#0000ff&quot;&gt;🔗 publication_date_key (FK)&lt;br&gt;🔗 received_date_key (FK)&lt;br&gt;🔗 revised_date_key (FK)&lt;br&gt;🔗 accepted_date_key (FK)&lt;br&gt;🔗 epub_date_key (FK)&lt;br&gt;🔗 ppub_date_key (FK)&lt;/font&gt;&lt;br&gt;standard_type&lt;br&gt;standard_value&lt;br&gt;standard_units&lt;br&gt;pchembl_value&lt;br&gt;confidence_score&lt;br&gt;assay_type&lt;br&gt;assay_description&lt;br&gt;assay_organism" vertex="1">
+          <mxGeometry height="330" width="180" x="300" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="date_dim" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#fff2cc;strokeColor=#d6b656;spacingLeft=5;" value="&lt;b&gt;dim_date&lt;/b&gt;&lt;hr&gt;🔑 date_key (PK)&lt;br&gt;full_date&lt;br&gt;year&lt;br&gt;quarter&lt;br&gt;month&lt;br&gt;day&lt;br&gt;day_of_week" vertex="1">
+          <mxGeometry height="150" width="160" x="580" y="60" as="geometry" />
         </mxCell>
         <mxCell id="prot" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#d5e8d4;strokeColor=#82b366;spacingLeft=5;" value="&lt;b&gt;dim_protein&lt;/b&gt;&lt;hr&gt;🔑 protein_key (PK)&lt;br&gt;🆔 uniprot_id (Unique)&lt;br&gt;gene_names&lt;br&gt;protein_name&lt;br&gt;sequence&lt;br&gt;sequence_length&lt;br&gt;protein_families" vertex="1">
           <mxGeometry height="150" width="180" x="40" y="320" as="geometry" />
@@ -19,10 +22,15 @@
         <mxCell id="struc" parent="1" style="verticalAlign=top;align=left;overflow=hidden;fontSize=12;fontFamily=Helvetica;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;spacingLeft=5;" value="&lt;b&gt;dim_structure&lt;/b&gt;&lt;hr&gt;🔑 structure_key (PK)&lt;br&gt;🔗 protein_key (FK)&lt;br&gt;pdb_id&lt;br&gt;chain_id&lt;br&gt;resolution&lt;br&gt;coverage&lt;br&gt;method&lt;br&gt;unp_start&lt;br&gt;unp_end" vertex="1">
           <mxGeometry height="170" width="180" x="40" y="550" as="geometry" />
         </mxCell>
+        <mxCell id="edge_date" edge="1" parent="1" source="fact" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=1;exitY=0.15;exitDx=0;exitDy=0;strokeColor=#d6b656;strokeWidth=2;endArrow=block;endFill=1;" target="date_dim">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
         <mxCell id="edge_prot" edge="1" parent="1" source="prot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0;entryY=0.25;entryDx=0;entryDy=0;exitX=1;exitY=0.25;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge_drug" edge="1" parent="1" source="drug" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=1;entryY=0.25;entryDx=0;entryDy=0;exitX=0;exitY=0.25;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
+        <mxCell id="edge_drug" edge="1" parent="1" source="drug" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitX=0;exitY=0.5;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="edge_art" edge="1" parent="1" source="art" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;endArrow=block;endFill=1;" target="fact">
