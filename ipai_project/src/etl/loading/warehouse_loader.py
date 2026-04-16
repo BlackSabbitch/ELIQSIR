@@ -8,6 +8,7 @@ for high-performance, memory-efficient upserts without staging tables.
 import pandas as pd
 from pathlib import Path
 import numpy as np
+from datetime import datetime  # <--- ДОБАВИТЬ ЭТУ СТРОКУ
 
 from src.database.connection_manager import db_manager
 from src.utils.logging_config import get_logger
@@ -98,6 +99,12 @@ class WarehouseLoader:
         results["dim_article"] = self.load_table(
             csv_dir / "dim_article.csv", "dim_article", "article_key"
         )
+        
+        # Loading the Data-Driven Date Dimension
+        results["dim_date"] = self.load_table(
+            csv_dir / "dim_date.csv", "dim_date", "date_key"
+        )
+        
         results["dim_structure"] = self.load_table(
             csv_dir / "dim_structure.csv", "dim_structure", "structure_key"
         )
@@ -110,3 +117,67 @@ class WarehouseLoader:
         total = sum(results.values())
         logger.info("Bulk load complete! %d total rows written.", total)
         return results
+   
+    def update_date_dimension_from_facts(self):
+        """
+        Scans all lifecycle date columns in fact_bioactivity, 
+        identifies missing keys in dim_date, and populates them.
+        """
+        print("Scanning fact table for missing date keys...")
+        
+        union_query = """
+        SELECT DISTINCT date_key FROM (
+            SELECT received_date_key as date_key FROM fact_bioactivity
+            UNION SELECT revised_date_key FROM fact_bioactivity
+            UNION SELECT accepted_date_key FROM fact_bioactivity
+            UNION SELECT epub_date_key FROM fact_bioactivity
+            UNION SELECT ppub_date_key FROM fact_bioactivity
+        ) AS all_keys
+        WHERE date_key != 19000101 
+          AND date_key NOT IN (SELECT date_key FROM dim_date);
+        """
+        
+        with db_manager.get_dwh_connection() as conn:
+            missing_keys_df = pd.read_sql(union_query, conn)
+            
+        missing_keys = missing_keys_df['date_key'].tolist()
+
+        if not missing_keys:
+            print("All date keys are already present in dim_date. No update needed.")
+            return
+
+        print(f"Found {len(missing_keys)} missing dates. Generating metadata...")
+
+        new_date_records = []
+        for key in missing_keys:
+            try:
+                date_str = str(int(key))
+                dt = datetime.strptime(date_str, '%Y%m%d')
+                
+                new_date_records.append((
+                    int(key),                    # date_key
+                    dt.date(),                   # full_date
+                    dt.year,                     # year
+                    dt.month,                    # month
+                    dt.day,                      # day
+                    (dt.month - 1) // 3 + 1,     # quarter
+                    dt.isocalendar()[1],         # week_of_year
+                    dt.strftime('%A'),           # day_name
+                    1 if dt.weekday() >= 5 else 0 # is_weekend
+                ))
+            except ValueError:
+                print(f"Skipping invalid date key found in data: {key}")
+                continue
+
+        insert_sql = """
+        INSERT INTO dim_date 
+        (date_key, full_date, year, month, day, quarter, week_of_year, day_name, is_weekend)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        with db_manager.get_dwh_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany(insert_sql, new_date_records)
+            conn.commit()
+            
+        print(f"Successfully added {len(new_date_records)} new dates to dim_date.")

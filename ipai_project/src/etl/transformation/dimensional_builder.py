@@ -69,50 +69,44 @@ class DimensionalModelBuilder:
         self._structure_next_sk: int = (max(self._structure_lookup.values()) + 1) if self._structure_lookup else 1
 
     # ------------------------------------------------------------------
-    # DimDate (Static Generation)
+    # DimDate 
     # ------------------------------------------------------------------
 
-    def build_dim_date(self, start_year: int = 1950, end_year: int = 2030) -> pd.DataFrame:
+    def build_dim_date(self, fact_df: pd.DataFrame) -> pd.DataFrame:
         """
-        Build the ``DimDate`` dimension table.
-        Generates a continuous temporal calendar with ML-specific features
-        (e.g., fractional_year) to prevent data leakage during graph training.
+        Dynamically generates the Data-Driven Date Dimension.
+        At the Transformation stage, it extracts temporal keys strictly from the 
+        baseline 'publication_date_key'.
         """
-        logger.info("Building DimDate from %d to %d.", start_year, end_year)
-
-        date_range = pd.date_range(start=f"{start_year}-01-01", end=f"{end_year}-12-31", freq="D")
-        df = pd.DataFrame({"full_date": date_range})
-
-        # Generate YYYYMMDD integer surrogate key for optimal B-Tree indexing
-        df["date_key"] = df["full_date"].dt.strftime("%Y%m%d").astype(int)
-
-        df["year"] = df["full_date"].dt.year.astype("Int16")
-        df["month"] = df["full_date"].dt.month.astype("Int8")
-        df["day"] = df["full_date"].dt.day.astype("Int8")
-        df["quarter"] = df["full_date"].dt.quarter.astype("Int8")
-        df["day_of_week"] = df["full_date"].dt.dayofweek.astype("Int8") 
-        df["is_weekend"] = df["day_of_week"].isin([5, 6]).astype(int)
-
-        # ML temporal feature
-        days_in_year = df["full_date"].dt.is_leap_year.map({True: 366.0, False: 365.0})
-        df["fractional_year"] = df["year"] + (df["full_date"].dt.dayofyear - 1) / days_in_year
-        df["epoch_time"] = df["full_date"].astype("int64") // 10**9
-
-        columns = [
-            "date_key", "full_date", "year", "month", "day", 
-            "quarter", "day_of_week", "is_weekend", 
-            "fractional_year", "epoch_time"
-        ]
         
-        # Add default unknown date row to satisfy Foreign Key constraints for missing data
-        unknown_row = pd.DataFrame([{
-            "date_key": 19000101, "full_date": pd.Timestamp("1900-01-01"),
-            "year": 1900, "month": 1, "day": 1, "quarter": 1, 
-            "day_of_week": 0, "is_weekend": 0, "fractional_year": 1900.0, "epoch_time": 0
-        }])
+        # 1. Extract unique dates from the pre-enrichment state
+        if 'publication_date_key' in fact_df.columns:
+            unique_dates = fact_df['publication_date_key'].dropna()
+        else:
+            # Fallback if someone passes an old schema
+            unique_dates = pd.Series(dtype='Int64')
+            
+        # 2. Ensure the default 'Unknown' anchor is always present
+        unique_dates = pd.concat([unique_dates, pd.Series([19000101])])
         
-        df = pd.concat([unknown_row, df], ignore_index=True)
-        return df[columns]
+        # 3. Drop duplicates to finalize the temporal basis
+        unique_dates = unique_dates.drop_duplicates().astype(int)
+        
+        # 4. Initialize the dimension DataFrame
+        dim_date = pd.DataFrame({'date_key': unique_dates})
+        
+        # 5. Feature Engineering: Extract hierarchical temporal attributes
+        dim_date['year'] = dim_date['date_key'] // 10000
+        dim_date['month'] = (dim_date['date_key'] % 10000) // 100
+        dim_date['day'] = dim_date['date_key'] % 100
+        dim_date['quarter'] = ((dim_date['month'] - 1) // 3) + 1
+        
+        dim_date['fractional_year'] = dim_date.apply(
+            lambda row: 1900.0 if row['date_key'] == 19000101 else row['year'] + (row['month'] - 1) / 12.0, 
+            axis=1
+        ).round(3)
+        
+        return dim_date.sort_values('date_key').reset_index(drop=True)
 
     # ------------------------------------------------------------------
     # DimProtein
@@ -259,6 +253,7 @@ class DimensionalModelBuilder:
         """
         Build the ``FactBioactivity`` fact table.
         Integrates temporal imputation to map dates to DimDate surrogate keys.
+        Prepares the Role-Playing dimensions for the enrichment phase.
         """
         logger.info("Building FactBioactivity - %d input rows.", len(df_chembl))
 
@@ -309,7 +304,7 @@ class DimensionalModelBuilder:
                 )
                 fact.loc[valid_indices, "date_precision"] = "Exact"
 
-        # 3. Finalize output columns
+        # 3. Finalize output columns (Initial filtering)
         output_cols = [
             "activity_id", "protein_key", "drug_key", "article_key", "date_key", "date_precision",
             "standard_type", "standard_value", "standard_units", "pchembl_value",
@@ -319,5 +314,22 @@ class DimensionalModelBuilder:
         available = [c for c in output_cols if c in fact.columns]
         fact = fact[available]
 
+        # 4. Role-Playing Dimension Alignment
+        # Rename the primary temporal key to match the new architecture
+        if 'date_key' in fact.columns:
+            fact = fact.rename(columns={'date_key': 'publication_date_key'})
+            
+        # Initialize the 5 temporal placeholders for the Enrichment phase
+        temporal_roles = [
+            'received_date_key', 
+            'revised_date_key', 
+            'accepted_date_key', 
+            'epub_date_key', 
+            'ppub_date_key'
+        ]
+        for role in temporal_roles:
+            fact[role] = 19000101
+
         logger.info("FactBioactivity complete - %d rows.", len(fact))
+        
         return fact.reset_index(drop=True)
