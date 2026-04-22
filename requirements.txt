@@ -11,6 +11,14 @@ pyarrow>=15.0,<20.0          # parquet support (checkpoints + staging files)
 SQLAlchemy>=2.0,<3.0
 mysql-connector-python>=8.3,<9.0
 
+# ── NLP / Information Retrieval (Phase 2) ───────────────────────────────────
+nltk>=3.8,<4.0               # tokenization, stopwords, lemmatization
+scikit-learn>=1.4,<2.0       # TF-IDF vectorizer, cosine similarity
+rank-bm25>=0.2,<1.0          # BM25 probabilistic retrieval model
+
+# ── Visualisation ────────────────────────────────────────────────────────────
+matplotlib>=3.8,<4.0         # trend plots (enrichment validation)
+
 # ── Development / testing ───────────────────────────────────────────────────
 pytest>=8.0,<9.0
 pytest-cov>=5.0,<6.0
