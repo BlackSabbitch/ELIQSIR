@@ -75,38 +75,52 @@ class DimensionalModelBuilder:
     def build_dim_date(self, fact_df: pd.DataFrame) -> pd.DataFrame:
         """
         Dynamically generates the Data-Driven Date Dimension.
-        At the Transformation stage, it extracts temporal keys strictly from the 
-        baseline 'publication_date_key'.
+        Collects keys from ALL date columns in the fact table and 
+        generates human-readable attributes.
         """
+        # 1. Собираем даты из ВСЕХ колонок, где есть 'date_key'
+        date_cols = [c for c in fact_df.columns if 'date_key' in c]
+        unique_dates = pd.Series(dtype='Int64')
         
-        # 1. Extract unique dates from the pre-enrichment state
-        if 'publication_date_key' in fact_df.columns:
-            unique_dates = fact_df['publication_date_key'].dropna()
-        else:
-            # Fallback if someone passes an old schema
-            unique_dates = pd.Series(dtype='Int64')
+        for col in date_cols:
+            unique_dates = pd.concat([unique_dates, fact_df[col].dropna()])
             
-        # 2. Ensure the default 'Unknown' anchor is always present
         unique_dates = pd.concat([unique_dates, pd.Series([19000101])])
-        
-        # 3. Drop duplicates to finalize the temporal basis
         unique_dates = unique_dates.drop_duplicates().astype(int)
         
-        # 4. Initialize the dimension DataFrame
         dim_date = pd.DataFrame({'date_key': unique_dates})
         
-        # 5. Feature Engineering: Extract hierarchical temporal attributes
-        dim_date['year'] = dim_date['date_key'] // 10000
-        dim_date['month'] = (dim_date['date_key'] % 10000) // 100
-        dim_date['day'] = dim_date['date_key'] % 100
-        dim_date['quarter'] = ((dim_date['month'] - 1) // 3) + 1
+        dim_date['_temp_date'] = pd.to_datetime(dim_date['date_key'], format='%Y%m%d', errors='coerce')
+        dim_date['_temp_date'] = dim_date['_temp_date'].fillna(pd.Timestamp('1900-01-01'))
+
+        dim_date['full_date'] = dim_date['_temp_date'].dt.strftime('%Y-%m-%d')
+        dim_date['full_date_desc'] = dim_date['_temp_date'].dt.strftime('%B %d, %Y, %A')
         
+        dim_date['year'] = dim_date['date_key'] // 10000
+        dim_date['month_name'] = dim_date['_temp_date'].dt.strftime('%B')
+        dim_date['day'] = dim_date['date_key'] % 100
+        dim_date['quarter'] = dim_date['_temp_date'].dt.quarter
+        dim_date['day_name'] = dim_date['_temp_date'].dt.strftime('%A')
+        
+        dim_date['is_weekend'] = dim_date['_temp_date'].dt.dayofweek.apply(
+            lambda x: 'weekend' if x >= 5 else 'non-weekend'
+        )
+
         dim_date['fractional_year'] = dim_date.apply(
-            lambda row: 1900.0 if row['date_key'] == 19000101 else row['year'] + (row['month'] - 1) / 12.0, 
+            lambda row: 1900.0 if row['date_key'] == 19000101 else row['year'] + ((row['date_key'] % 10000) // 100 - 1) / 12.0, 
             axis=1
         ).round(3)
         
-        return dim_date.sort_values('date_key').reset_index(drop=True)
+        dim_date['epoch_time'] = dim_date['_temp_date'].astype('int64') // 10**9
+
+        dim_date = dim_date.drop(columns=['_temp_date'])
+
+        columns_order = [
+            'date_key', 'full_date', 'full_date_desc', 'year', 'month_name', 
+            'day', 'quarter', 'day_name', 'is_weekend', 'fractional_year', 'epoch_time'
+        ]
+
+        return dim_date[columns_order].sort_values('date_key').reset_index(drop=True)
 
     # ------------------------------------------------------------------
     # DimProtein

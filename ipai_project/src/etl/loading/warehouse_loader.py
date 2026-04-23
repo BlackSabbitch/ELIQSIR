@@ -121,7 +121,8 @@ class WarehouseLoader:
     def update_date_dimension_from_facts(self):
         """
         Scans all lifecycle date columns in fact_bioactivity, 
-        identifies missing keys in dim_date, and populates them.
+        identifies missing keys in dim_date, and populates them
+        with human-readable attributes.
         """
         print("Scanning fact table for missing date keys...")
         
@@ -146,7 +147,7 @@ class WarehouseLoader:
             print("All date keys are already present in dim_date. No update needed.")
             return
 
-        print(f"Found {len(missing_keys)} missing dates. Generating metadata...")
+        print(f"Found {len(missing_keys)} missing dates. Generating human-readable metadata...")
 
         new_date_records = []
         for key in missing_keys:
@@ -154,25 +155,31 @@ class WarehouseLoader:
                 date_str = str(int(key))
                 dt = datetime.strptime(date_str, '%Y%m%d')
                 
+                # Calculate fractional year
+                fractional_year = round(dt.year + ((dt.timetuple().tm_yday - 1) / 365.25), 3)
+                
                 new_date_records.append((
-                    int(key),                    # date_key
-                    dt.date(),                   # full_date
-                    dt.year,                     # year
-                    dt.month,                    # month
-                    dt.day,                      # day
-                    (dt.month - 1) // 3 + 1,     # quarter
-                    dt.isocalendar()[1],         # week_of_year
-                    dt.strftime('%A'),           # day_name
-                    1 if dt.weekday() >= 5 else 0 # is_weekend
+                    int(key),                               # date_key
+                    dt.date(),                              # full_date
+                    dt.strftime('%B %d, %Y, %A'),           # full_date_desc
+                    dt.year,                                # year
+                    dt.strftime('%B'),                      # month_name
+                    dt.day,                                 # day
+                    (dt.month - 1) // 3 + 1,                # quarter
+                    dt.strftime('%A'),                      # day_name
+                    'weekend' if dt.weekday() >= 5 else 'non-weekend', # is_weekend
+                    fractional_year,                        # fractional_year
+                    int(dt.timestamp())                     # epoch_time
                 ))
             except ValueError:
                 print(f"Skipping invalid date key found in data: {key}")
                 continue
 
+        # Match the exact columns from the updated schema
         insert_sql = """
         INSERT INTO dim_date 
-        (date_key, full_date, year, month, day, quarter, week_of_year, day_name, is_weekend)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        (date_key, full_date, full_date_desc, year, month_name, day, quarter, day_name, is_weekend, fractional_year, epoch_time)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         
         with db_manager.get_dwh_connection() as conn:
@@ -180,4 +187,4 @@ class WarehouseLoader:
             cursor.executemany(insert_sql, new_date_records)
             conn.commit()
             
-        print(f"Successfully added {len(new_date_records)} new dates to dim_date.")
+        print(f"Successfully added {len(new_date_records)} human-readable dates to dim_date.")

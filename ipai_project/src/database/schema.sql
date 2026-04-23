@@ -31,12 +31,13 @@ SET FOREIGN_KEY_CHECKS = 0;
 CREATE TABLE IF NOT EXISTS dim_date (
     date_key        INT           NOT NULL COMMENT 'Surrogate key format YYYYMMDD',
     full_date       DATE          NOT NULL COMMENT 'Standard SQL date format',
+    full_date_desc  VARCHAR(100)  COMMENT 'Human readable format (e.g., January 14, 1996, Tuesday)',
     year            SMALLINT      COMMENT 'Calendar year',
-    month           SMALLINT      COMMENT 'Calendar month (1-12)',
+    month_name      VARCHAR(20)   COMMENT 'Calendar month name (e.g., January)',
     day             SMALLINT      COMMENT 'Day of the month (1-31)',
     quarter         SMALLINT      COMMENT 'Calendar quarter (1-4)',
-    day_of_week     SMALLINT      COMMENT 'Day of week (0=Monday, 6=Sunday)',
-    is_weekend      BOOLEAN       COMMENT '1 if weekend, 0 otherwise',
+    day_name        VARCHAR(20)   COMMENT 'Day of week (e.g., Tuesday)',
+    is_weekend      VARCHAR(20)   COMMENT 'Text indicator: weekend or non-weekend',
     fractional_year DOUBLE        COMMENT 'Continuous time feature for GNNs (e.g., 2023.5)',
     epoch_time      BIGINT        COMMENT 'Unix epoch time in seconds',
 

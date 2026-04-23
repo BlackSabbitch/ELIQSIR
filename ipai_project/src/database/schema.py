@@ -41,14 +41,20 @@ SCHEMA_SQL_PATH: Path = Path(__file__).parent / "schema.sql"
 # Column registry
 # ---------------------------------------------------------------------------
 
-#: Ordered column lists per warehouse table.
-#:
-#: These lists mirror the ``CREATE TABLE`` column order in ``schema.sql`` and
-#: are used by :class:`~src.loading.warehouse_loader.WarehouseLoader` when
-#: building ``INSERT`` / ``ON DUPLICATE KEY UPDATE`` statements.  Keeping them
-#: here (rather than duplicated in the loader) means a schema column rename
-#: only needs to be updated in *one* place.
 TABLE_COLUMNS: dict[str, list[str]] = {
+    "dim_date": [
+        "date_key",
+        "full_date",
+        "full_date_desc",   # Added for Human readability
+        "year",
+        "month_name",       
+        "day",
+        "quarter",
+        "day_name",         
+        "is_weekend",       
+        "fractional_year",
+        "epoch_time"
+    ],
     "dim_protein": [
         "protein_key",
         "uniprot_id",
@@ -93,6 +99,7 @@ TABLE_COLUMNS: dict[str, list[str]] = {
         "protein_key",
         "drug_key",
         "article_key",
+        "date_key",           # Make sure date_key is here if it wasn't!
         "standard_type",
         "standard_value",
         "standard_units",
@@ -106,6 +113,7 @@ TABLE_COLUMNS: dict[str, list[str]] = {
 
 #: Primary key column per table (used by the loader to exclude from UPDATE set).
 TABLE_PRIMARY_KEYS: dict[str, str] = {
+    "dim_date":         "date_key", # Added dim_date PK
     "dim_protein":      "protein_key",
     "dim_drug":         "drug_key",
     "dim_article":      "article_key",
