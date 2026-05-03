@@ -56,13 +56,8 @@ class LexicalRetriever:
         # Replacing hyphens with spaces safely, matching indexer
         self.clean_pattern = re.compile(r'[^a-zA-Z0-9\s]')
         
-        self.SCIENTIFIC_STOP_WORDS = {
-            'study', 'result', 'using', 'significantly', 'effect', 'activity', 
-            'showed', 'data', 'research', 'analysis', 'method', 'concentration', 
-            'dose', 'values', 'compound', 'derivatives', 'inhibitor', 'active', 
-            'tested', 'based', 'potential', 'evaluated', 'clinical', 'treatment'
-        }
-        self.stop_words = set(stopwords.words('english')).union(self.SCIENTIFIC_STOP_WORDS)
+        # Use strictly standard English stop words
+        self.stop_words = set(stopwords.words('english'))
         
         print("Commencing countdown, engines ON!")
 

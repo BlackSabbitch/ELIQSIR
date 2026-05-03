@@ -72,10 +72,8 @@ class TrecPoolBuilder:
             print(f"ERROR: Query ID '{qid}' not found in GroundTruthManager.")
             return
 
-        print(f"\n{'='*85}")
-        print(f"BLIND ANNOTATION POOL | ID: {qid}")
+        print(f"\nBLIND ANNOTATION POOL | ID: {qid}")
         print(f"QUERY: '{query}'")
-        print(f"{'='*85}")
  
         # 1. Collect results from three independent search engines
         bm25_res = self.retriever.search_bm25(query, top_k=top_k)
@@ -97,7 +95,7 @@ class TrecPoolBuilder:
         random.seed(42) 
         random.shuffle(pool)
 
-        print(f"Pool Stats: {len(pool)} unique documents collected.")
+        print(f"\nPool Stats: {len(pool)} unique documents collected.")
         print(f"Sources: BM25({len(bm25_keys)}), TF-IDF({len(tfidf_keys)}), Boolean({len(bool_keys)})")
         print("\nINSTRUCTIONS: Review the snippets below. If relevant, use: gt_manager.add_relevant(qid, key)\n")
 
@@ -105,12 +103,11 @@ class TrecPoolBuilder:
         for i, key in enumerate(pool, 1):
             info = self.docs_info.get(key)
             if not info:
-                print(f"--- DOCUMENT {i}/{len(pool)} | KEY: [ {key} ] (MISSING IN CACHE) ---")
+                print(f"DOCUMENT {i}/{len(pool)} | KEY: [ {key} ] (MISSING IN CACHE)")
                 continue
 
-            print(f"--- DOCUMENT {i}/{len(pool)} | KEY: [ {key} ] ---")
+            print(f"DOCUMENT {i}/{len(pool)} | KEY: [ {key} ]")
             print(f"TITLE:    {info['title']}")
             print(f"SOURCE:  {info['journal']} | YEAR: {info['year']}")
             print(f"ENTITIES: {info['entities']}")
             print(f"ABSTRACT: {info['abstract']}")
-            print("-" * 50 + "\n")

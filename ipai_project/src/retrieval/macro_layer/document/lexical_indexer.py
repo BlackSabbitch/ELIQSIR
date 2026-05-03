@@ -17,13 +17,6 @@ class LexicalIndexer:
     Memory-optimized for processing large JSONL files using generators and batched I/O.
     """
     
-    SCIENTIFIC_STOP_WORDS = {
-        'study', 'result', 'using', 'significantly', 'effect', 'activity', 
-        'showed', 'data', 'research', 'analysis', 'method', 'concentration',
-        'dose', 'values', 'compound', 'derivatives', 'inhibitor', 'active',
-        'tested', 'based', 'potential', 'evaluated', 'clinical', 'treatment'
-    }
-
     def __init__(self, corpus_path: str = None):
         # 1. Ensure NLTK resources are available
         try:
@@ -52,7 +45,8 @@ class LexicalIndexer:
         
         # 3. Setup NLP Pipeline Components
         self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english')).union(self.SCIENTIFIC_STOP_WORDS)
+
+        self.stop_words = set(stopwords.words('english'))
         self.lemmatize_cached = lru_cache(maxsize=10000)(self.lemmatizer.lemmatize)
         
         # Replace non-alphanumeric characters (including hyphens) with spaces safely
@@ -60,6 +54,7 @@ class LexicalIndexer:
         
         # 4. Setup Scikit-Learn Vectorizers
         self.params = {
+            "stop_words": "english", 
             "lowercase": False, 
             "ngram_range": (1, 2), 
             "min_df": 2,          
@@ -189,7 +184,7 @@ class LexicalIndexer:
         Reads the processed streaming corpus and pre-compiles the BM25 index
         to save memory and initialization time during retrieval.
         """
-        print("\n--- Phase 3: Building BM25 Index ---")
+        print("\nBuilding BM25 Index")
         from rank_bm25 import BM25Okapi 
         
         corpus_file = self.output_dir / "processed_corpus.txt"

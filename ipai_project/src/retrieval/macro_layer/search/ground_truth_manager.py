@@ -5,7 +5,7 @@ from pathlib import Path
 class GroundTruthManager:
     """
     Manages the creation, storage, and retrieval of the Ground Truth (QRELS) dataset.
-    Updated for Eliqsir v2: Semantic Prefixes & Entity-Driven Queries.
+    Updated for Eliqsir v2: Semantic Prefixes, Entity-Driven Queries, and Batch Processing.
     """
     def __init__(self):
         env_data_dir = os.getenv("DATA_DIR")
@@ -18,17 +18,21 @@ class GroundTruthManager:
         
         # 10 Refined, Complex Scientific Queries
         self.queries = {
+            # Basic lexic queries
             "q1": "EGFR kinase inhibitors in Homo sapiens", # Target + Organism
             "q2": "X-ray crystal structure of protein-ligand complexes", # Structure Method
             "q3": "Cyclic nucleotide phosphodiesterase family inhibitors", # Protein Family
             "q4": "potency of Imatinib mesylate measured by IC50 or Ki", # Compound + Measurement
             "q5": "Small molecule antagonists for GPCR targets", # Molecule Type + Target
-            "q6": "treatment of triple-negative breast cancer with doxorubicin", # Clinical + Drug
-            "q7": "PDE2A and P2RY12 dual target inhibition", # Multiple Genes
-            "q8": "toxicity and cell viability assays in mitochondrial stress", # Assay Context
-            "q9": "mechanism of resistance to platinum-based chemotherapy", # Complex Biological Process
-            "q10": "binding affinity of monoclonal antibodies after 2020" # Type + Temporal context
+            # Balanced queries for BM25 and neuro search benchmarking
+            "bq1": "EGFR kinase inhibitors in Homo sapiens", # Lexical
+            "bq2": "potency of Imatinib mesylate measured by IC50 or Ki", # Lexical
+            "bq3": "X-ray crystal structure of protein-ligand complexes", # Lexical
+            "bq4": "novel treatments for high blood pressure without side effects", # Semantic
+            "bq5": "drugs that can shrink breast tumors in triple negative cases", # Semantic
+            "bq6": "mechanism of resistance to platinum-based chemotherapy" # Semantic
         }
+  
         self.qrels = self._load_qrels()
 
     def _load_qrels(self) -> dict:
@@ -45,13 +49,38 @@ class GroundTruthManager:
         print(f"Ground Truth successfully saved to {self.file_path.name}")
 
     def add_relevant(self, qid: str, article_key: str):
-        """Adds a document key to a specific query's ground truth."""
+        """Adds a single document key to a specific query's ground truth."""
         if qid in self.qrels:
-            # Ensure article_key is stored as a string for JSON consistency
             ak_str = str(article_key)
             if ak_str not in self.qrels[qid]:
                 self.qrels[qid].append(ak_str)
                 print(f"  [+] Added {ak_str} to {qid}")
+
+    def add_batch(self, annotations_dict: dict):
+        """
+        Adds multiple annotations at once using a dictionary.
+        Format: {"q1": ["123", "456"], "q2": ["789"]}
+        """
+        total_added = 0
+        for qid, keys in annotations_dict.items():
+            if qid not in self.qrels:
+                print(f"  [!] Warning: '{qid}' is not a valid benchmark query. Skipping.")
+                continue
+            
+            added_for_query = 0
+            for key in keys:
+                ak_str = str(key)
+                if ak_str not in self.qrels[qid]:
+                    self.qrels[qid].append(ak_str)
+                    added_for_query += 1
+                    total_added += 1
+            
+            print(f"  [+] Processed {qid}: Added {added_for_query} new relevant documents.")
+            
+        if total_added > 0:
+            self.save_qrels()
+        else:
+            print("  [-] No new unique documents were added.")
 
     def remove_relevant(self, qid: str, article_key: str):
         """Removes a document key in case of a manual annotation mistake."""
@@ -63,7 +92,7 @@ class GroundTruthManager:
 
     def get_annotation_stats(self):
         """Prints a summary of how many documents have been judged relevant per query."""
-        print("\n=== Annotation Progress ===")
+        print("\nAnnotation Progress")
         total = 0
         for qid, docs in self.qrels.items():
             count = len(docs)
