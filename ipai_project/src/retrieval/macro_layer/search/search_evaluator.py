@@ -1,5 +1,6 @@
 import json
 import random
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -92,6 +93,98 @@ class SearchEvaluator:
             print(f"  {metric}: {val}")
             
         return df
+
+
+    # Grid Evaluation & Heatmap  
+    def evaluate_k_grid(self, model_name: str, search_callable, k_values: list = None) -> dict:
+        """
+        Evaluates the model across multiple values of K to find the optimal cutoff.
+        Uses an optimized slicing approach to query the engine only once per query.
+        """
+        if k_values is None:
+            k_values = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100]
+
+        print(f"\nEVALUATING GRID: {model_name} across K={k_values}")
+        max_k = max(k_values)
+        
+        # Initialize storage for all K values
+        k_metrics_history = {k: {"P@K": [], "Recall@K": [], "F1@K": [], "nDCG@K": [], "MAP@K": []} for k in k_values}
+        
+        for qid, query in self.gt.queries.items():
+            relevant_docs = set(self.gt.qrels.get(qid, []))
+            if not relevant_docs:
+                continue
+                
+            # Query ONCE for the maximum K needed (Massive performance boost)
+            if "Boolean" in model_name:
+                raw_results = search_callable(query)
+            else:
+                raw_results = search_callable(query, top_k=max_k)
+                
+            all_retrieved_docs = [str(r['article_key']) for r in raw_results]
+            
+            # Slice the results for each K and calculate metrics
+            for k in k_values:
+                retrieved_k = all_retrieved_docs[:k]
+                
+                k_metrics_history[k]["P@K"].append(MetricsEngine.precision_at_k(relevant_docs, retrieved_k, k))
+                k_metrics_history[k]["Recall@K"].append(MetricsEngine.recall(relevant_docs, retrieved_k))
+                k_metrics_history[k]["F1@K"].append(MetricsEngine.f1_score(relevant_docs, retrieved_k))
+                k_metrics_history[k]["nDCG@K"].append(MetricsEngine.ndcg_at_k(relevant_docs, retrieved_k, k))
+                k_metrics_history[k]["MAP@K"].append(MetricsEngine.average_precision(relevant_docs, retrieved_k))
+                
+        # Aggregate (mean) metrics for each K to pass to the heatmap
+        aggregated_metrics = {"Precision@K": [], "Recall@K": [], "F1@K": [], "nDCG@K": [], "MAP@K": []}
+        
+        for k in k_values:
+            aggregated_metrics["Precision@K"].append(np.mean(k_metrics_history[k]["P@K"]) if k_metrics_history[k]["P@K"] else 0)
+            aggregated_metrics["Recall@K"].append(np.mean(k_metrics_history[k]["Recall@K"]) if k_metrics_history[k]["Recall@K"] else 0)
+            aggregated_metrics["F1@K"].append(np.mean(k_metrics_history[k]["F1@K"]) if k_metrics_history[k]["F1@K"] else 0)
+            aggregated_metrics["nDCG@K"].append(np.mean(k_metrics_history[k]["nDCG@K"]) if k_metrics_history[k]["nDCG@K"] else 0)
+            aggregated_metrics["MAP@K"].append(np.mean(k_metrics_history[k]["MAP@K"]) if k_metrics_history[k]["MAP@K"] else 0)
+                
+        return aggregated_metrics
+
+    def plot_k_grid_heatmap(self, metrics_dict: dict, k_values: list, model_name: str, query_subset: str = "q1-q5"):
+        """
+        Plots a heatmap of metrics across different K values.
+        Enhanced for academic reporting with Mean indicators and query subset tracking.
+        """
+        df = pd.DataFrame(metrics_dict)
+        df['k'] = k_values
+        df.set_index('k', inplace=True)
+        df = df.T  # Transpose: rows = metrics, cols = k
+        
+        df.index = [f"Mean {idx}" for idx in df.index]
+        
+        plt.figure(figsize=(14, 6))
+        sns.set_theme(style="whitegrid")
+        
+        ax = sns.heatmap(
+            df, 
+            annot=True, 
+            fmt=".3f", 
+            cmap="YlGnBu", 
+            linewidths=.5, 
+            cbar_kws={'label': 'Mean Score'}
+        )
+        
+        main_title = f"{model_name}: Retrieval Depth (k) Optimization"
+        sub_title = f"Mean performance metrics across Ground Truth queries ({query_subset})"
+        
+        plt.title(f"{main_title}\n{sub_title}", pad=20, fontsize=15, fontweight='bold')
+        
+        # Enhance axis labels
+        plt.xlabel("K (Number of top documents retrieved)", fontsize=12, fontweight='bold')
+        plt.ylabel("Evaluation Metric", fontsize=12, fontweight='bold')
+        plt.yticks(rotation=0)
+        
+        # Add a subtle watermark or note at the bottom right (Optional but looks pro)
+        plt.figtext(0.99, 0.01, f"Data Warehouse: ELIQSIR | Pooling: Top-20", 
+                    horizontalalignment='right', fontsize=9, color='gray', style='italic')
+        
+        plt.tight_layout()
+        plt.show()
 
     def plot_benchmark_results(self, results_df: pd.DataFrame, metrics: list = None, top_q: int = 5):
         # Generates comparative bar charts for multiple metrics.
@@ -190,28 +283,22 @@ class SearchEvaluator:
                 
         print("=== END OF EXPORT ===")
 
-    def evaluate_bm25_vs_neural(self, neural_indexer, k: int = 10, metrics_to_plot: list = None) -> pd.DataFrame:
-        """
-        Runs the evaluation pipeline for both BM25 and Neural search models,
-        combines the data into a single DataFrame, and plots the results.
-        """
+    def evaluate_bm25_vs_neural(self, neural_indexer, k: int = 10, metrics_to_plot: list = None, top_q: int = 6) -> pd.DataFrame:
+        """..."""
         print("\n" + "="*50)
-        print("RUNNING FULL A/B BENCHMARK")
+        print("RUNNING A/B BENCHMARK")
         print("="*50)
         
-        # 1. Evaluate BM25
         df_bm25 = self.evaluate_model("BM25", self.retriever.search_bm25, k=k)
         df_bm25['method'] = 'BM25' 
         
-        # 2. Evaluate Neural Indexer
         df_neural = self.evaluate_model("Neural (MiniLM)", neural_indexer.search, k=k)
         df_neural['method'] = 'Neural (Semantic)' 
         
-        # 3. Combine DataFrames
         df_combined = pd.concat([df_bm25, df_neural], ignore_index=True)
         
-        # 4. Generate the comparative plots
         print("\nGenerating Benchmark Plots...")
-        self.plot_benchmark_results(df_combined, metrics=metrics_to_plot)
+        # Пробрасываем top_q в функцию отрисовки!
+        self.plot_benchmark_results(df_combined, metrics=metrics_to_plot, top_q=top_q) 
         
         return df_combined

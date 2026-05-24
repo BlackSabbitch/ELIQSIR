@@ -3,9 +3,10 @@ from IPython.display import display, clear_output
 from IPython.display import HTML as IHTML
 
 class ELIQSIRPlayground:
-    def __init__(self, lexical_retriever, neural_indexer, df_metadata):
+    def __init__(self, lexical_retriever, neural_indexer, hybrid_retriever, df_metadata):
         self.lexical = lexical_retriever
         self.neural = neural_indexer
+        self.hybrid = hybrid_retriever 
         self.df = df_metadata.copy()
         self.df['article_key'] = self.df['article_key'].astype(int)
         self.df = self.df.set_index('article_key')
@@ -29,8 +30,9 @@ class ELIQSIRPlayground:
             layout=widgets.Layout(width='50%')
         )
 
+        # Set default value to 20 and max to 50 for optimal retrieval exploration
         self.top_k_slider = widgets.IntSlider(
-            value=5, min=1, max=10, step=1,
+            value=20, min=1, max=50, step=1,
             description='Top K:',
         )
 
@@ -43,22 +45,6 @@ class ELIQSIRPlayground:
         
         self.output_area = widgets.Output()
         self.search_button.on_click(self._on_search_clicked)
-
-    def _hybrid_search_logic(self, query, top_k):
-        candidate_k = max(60, top_k * 2)
-        bm25_res = self.lexical.search_bm25(query, top_k=candidate_k)
-        neural_res = self.neural.search(query, top_k=candidate_k)
-        
-        scores = {}
-        for rank, res in enumerate(bm25_res, 1):
-            key = int(res['article_key'])
-            scores[key] = scores.get(key, 0) + (1.0 / (60 + rank))
-        for rank, res in enumerate(neural_res, 1):
-            key = int(res['article_key'])
-            scores[key] = scores.get(key, 0) + (1.0 / (60 + rank))
-            
-        sorted_keys = sorted(scores.items(), key=lambda x: x[1], reverse=True)
-        return [{'article_key': k, 'score': s} for k, s in sorted_keys[:top_k]]
 
     def _on_search_clicked(self, b):
         with self.output_area:
@@ -77,7 +63,7 @@ class ELIQSIRPlayground:
                 elif model == 'neural':
                     results = self.neural.search(query, top_k=k)
                 else:
-                    results = self._hybrid_search_logic(query, k)
+                    results = self.hybrid.search(query, top_k=k)
                     
                 self._render_results(results)
             except Exception as e:
@@ -105,16 +91,38 @@ class ELIQSIRPlayground:
                 metrics = row.get('metrics', {})
                 pchembl = metrics.get('avg_pchembl', 'N/A')
                 
+                # Extract keys for hyperlinking ---
+                natural_keys = row.get('natural_keys', {})
+                pubmed_id = natural_keys.get('pubmed_id')
+                doi = natural_keys.get('doi')
+                
+                # Handle possible list format just in case
+                if isinstance(pubmed_id, list) and pubmed_id: pubmed_id = pubmed_id[0]
+                if isinstance(doi, list) and doi: doi = doi[0]
+                
+                # Create a clickable title if an ID exists
+                title_html = title
+                if pubmed_id:
+                    link = f"https://pubmed.ncbi.nlm.nih.gov/{pubmed_id}/"
+                    title_html = f"<a href='{link}' target='_blank' style='color: #1a0dab; text-decoration: underline;'>{title}</a>"
+                elif doi:
+                    link = f"https://doi.org/{doi}"
+                    title_html = f"<a href='{link}' target='_blank' style='color: #1a0dab; text-decoration: underline;'>{title}</a>"
+                else:
+                    # Fallback for articles without external links
+                    title_html = f"<span style='color: #1a0dab;'>{title}</span>"
+                  
                 full_text = row.get('search_corpus', '')
                 snippet = (full_text[:350] + '...') if len(full_text) > 350 else full_text
             except (KeyError, TypeError):
-                title, authors, journal, year, pchembl, snippet = f"Article {key}", "N/A", "N/A", "N/A", "N/A", "Content missing in JSONL."
+                title_html = f"<span style='color: #1a0dab;'>Article {key}</span>"
+                authors, journal, year, pchembl, snippet = "N/A", "N/A", "N/A", "N/A", "Content missing in JSONL."
 
             html += f"""
             <div style="border-left: 5px solid #3498db; padding: 15px; margin-bottom: 20px; 
                         background-color: #fcfcfc; box-shadow: 2px 2px 5px rgba(0,0,0,0.05); font-family: sans-serif;">
-                <div style="color: #1a0dab; font-size: 18px; font-weight: bold; margin-bottom: 5px;">
-                    {i}. {title}
+                <div style="font-size: 18px; font-weight: bold; margin-bottom: 5px;">
+                    {i}. {title_html}
                 </div>
                 <div style="color: #545454; font-size: 13px; margin-bottom: 8px;">
                     <b>Authors:</b> {authors} | <b>Journal:</b> {journal} ({year})
@@ -139,7 +147,8 @@ class ELIQSIRPlayground:
         display(IHTML(html))
 
     def show(self):
-        header = widgets.HTML("<h2>ELIQSIR Search Lab</h2><p>Compare lexical and neural models on scientific corpus.</p>")
+        # Display the search lab UI components
+        header = widgets.HTML("<h2>ELIQSIR Search Lab</h2><p>Compare lexical, neural and hybrid models on scientific corpus.</p>")
         ui = widgets.VBox([
             header,
             self.model_dropdown,
